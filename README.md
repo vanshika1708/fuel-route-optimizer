@@ -12,7 +12,7 @@ A Django REST API that geocodes US locations with OpenStreetMap Nominatim, obtai
 - `RoutingService` makes one OSRM driving request per uncached coordinate pair and caches distance, duration, and GeoJSON.
 - `RouteGeometryService` projects points onto route segments and computes cumulative route progress locally.
 - `FuelService` uses a SQLite bounding-box prefilter and local geometric distance checks.
-- `FuelOptimizationService` follows a deterministic look-ahead fueling strategy: use free initial fuel first, target a cheaper station if it can be reached on a full tank, otherwise buy enough to fill and progress to the furthest reachable station. It never buys unnecessary fuel for a reachable final leg.
+- `FuelOptimizationService` uses the standard minimum-cost gas-station strategy over the available ordered route candidates. It uses already-paid initial fuel first, targets the nearest reachable cheaper station, and otherwise buys only enough to finish or fills to extend reach.
 
 External providers are isolated behind services, use explicit timeouts, and can be replaced independently.
 
@@ -136,14 +136,28 @@ Values below describe fields only; runtime values always come from the geocoder,
 
 The shape is illustrative; the example's stop list and totals are not a promised result. A request can return 422 when the locally geocoded station records cannot bridge a required leg.
 
-## Optimization and Fueling Assumptions
+## Fuel Optimization Algorithm
+
+The optimizer minimizes the **additional fuel purchase cost** over the supplied candidate stations. The initial tank is treated as already paid for: it is consumed normally, but its cost is never included. Fuel consumption is route distance divided by MPG; each purchase is limited by remaining tank capacity, and every traveled leg must fit both the available fuel and maximum vehicle range.
+
+Candidates are ordered by projected miles from the route start, then station record ID for deterministic ties. This is a one-dimensional route model: a candidate can be used only in forward route order. The nearest-cheaper decision is precomputed over that order. At each paid station, if a cheaper station lies within maximum range, the planner buys only enough to reach it. Otherwise, it buys enough to reach the destination when that is within one tank, or fills to capacity to maximize reach. If the destination is reachable with current fuel, the planner buys nothing.
+
+This is the standard gas-station greedy algorithm. With fixed route positions, unlimited availability at each candidate, constant MPG, linear per-gallon prices, freely chosen purchase quantities, no station detour cost, and no per-purchase fees, buying past the nearest cheaper reachable station cannot improve cost: the same gallons can instead be bought at that cheaper station. If there is no cheaper station within range, filling maximizes how far the current purchase can carry the vehicle. Repeating those choices yields a minimum-cost plan over the supplied ordered candidate model. It does **not** guarantee a globally cheapest real-world trip when candidate coordinates or route positions are inaccurate, stations have detours or availability constraints, or prices/costs include fees.
+
+For example, if the vehicle reaches a $4.00 station with enough fuel to reach a $3.00 station 150 miles farther along, it buys only the shortfall needed to cover those 150 miles. It does not fill the tank at $4.00. If no cheaper station is reachable and the destination is beyond range, it buys up to capacity so the next purchase can be delayed as far as possible.
+
+For $n$ candidates, sorting and route-position indexing take $O(n\log n)$ time; the nearest-cheaper scan and fueling traversal are linear, with binary searches per transition. Optimizer space use is $O(n)$. Candidate database filtering and geometric projection happen separately in `FuelService`; no routing or geocoding requests are made per station.
+
+The CSV has no station coordinates. City/state enrichment produces approximate city-level points, not exact truck-stop entrances. Therefore the guarantee applies only to the candidates, prices, and projected positions actually supplied to the optimizer; the real-world result remains approximate until precise station coordinates and current prices are available.
+
+## Fueling Assumptions
 
 - The vehicle begins with a full 50-gallon tank. `500 miles / 10 MPG = 50 gallons`.
 - The opening tank is already paid for and is never included in route fuel cost.
 - Route fuel consumption is `distance_miles / 10` and is distinct from purchased gallons.
 - Purchases are made only at selected stations and never exceed tank capacity.
 - Every leg between start, selected stations, and finish must fit the 500-mile maximum range.
-- Fuel prices are the CSV `Retail Price` values. Costs use decimal arithmetic and round to cents per purchase.
+- Fuel prices are the CSV `Retail Price` values. Costs use decimal arithmetic and round to cents when serialized in the API response.
 - The default candidate corridor is 25 miles. City-level geocoding makes this proximity approximate, as disclosed above.
 - If the finish is reachable with fuel already in the tank, the planner does not add an unnecessary stop or purchase.
 

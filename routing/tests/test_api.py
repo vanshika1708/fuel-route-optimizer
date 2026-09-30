@@ -1,9 +1,12 @@
+from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 from django.test import override_settings
 from rest_framework.test import APIClient
 
+from routing.services.fuel_service import FuelCandidate
 from routing.services.geocoding_service import GeoLocation
 from routing.services.provider_errors import NonUSLocationError, RoutingProviderError
 from routing.services.routing_service import RouteResult
@@ -76,6 +79,52 @@ def test_route_request_returns_calculated_response():
     assert payload["fuel_summary"]["total_fuel_purchased_gallons"] == 0
     assert payload["fuel_summary"]["total_fuel_cost"] == 0
     route_call.assert_called_once()
+
+
+@override_settings(ALLOWED_HOSTS=["testserver"])
+def test_new_york_to_chicago_route_response_remains_compatible():
+    route = RouteResult(
+        790.57 * 1609.344,
+        891 * 60,
+        {"type": "LineString", "coordinates": [[-74.006, 40.713], [-87.624, 41.876]]},
+    )
+    station = SimpleNamespace(
+        pk=1,
+        opis_truckstop_id=101,
+        truckstop_name="Test Fuel",
+        city="Hubbard",
+        state="OH",
+        latitude=41.0,
+        longitude=-80.5,
+        location_precision="city",
+        retail_price=Decimal("3.25999999"),
+    )
+    location = GeoLocation(40.7, -74.0, "us", "US")
+    with (
+        patch("routing.views.GeocodingService.geocode", return_value=location),
+        patch("routing.views.RoutingService.get_route", return_value=route),
+        patch(
+            "routing.views.FuelService.find_candidates",
+            return_value=[FuelCandidate(station, 450, 2.0)],
+        ),
+    ):
+        response = APIClient().post(
+            "/api/v1/route/",
+            {"start": "New York, NY", "finish": "Chicago, IL"},
+            format="json",
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["route"]["distance_miles"] == pytest.approx(790.57)
+    assert payload["route"]["duration_minutes"] == 891
+    assert payload["route"]["geometry"]["type"] == "LineString"
+    assert len(payload["fuel_stops"]) == 1
+    stop = payload["fuel_stops"][0]
+    assert stop["location_precision"] == "city"
+    assert stop["gallons_purchased"] == pytest.approx(29.057, abs=0.001)
+    assert stop["selection_reason"]["decision"]
+    assert payload["fuel_summary"]["total_fuel_cost"] == pytest.approx(94.73, abs=0.01)
 
 
 def test_non_us_locations_return_400():

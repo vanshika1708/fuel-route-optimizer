@@ -122,7 +122,7 @@ class RouteView(APIView):
 					"initial_fuel_gallons": tank_capacity,
 					"total_fuel_purchased_gallons": round(plan.total_fuel_purchased_gallons, 3),
 					"ending_fuel_gallons": round(plan.ending_fuel_gallons, 3),
-					"total_fuel_cost": float(plan.total_fuel_cost),
+					"total_fuel_cost": float(plan.total_fuel_cost.quantize(Decimal("0.01"))),
 				},
 			}
 		)
@@ -145,10 +145,11 @@ class RouteView(APIView):
 			"distance_from_start_miles": round(stop.candidate.distance_from_start_miles, 2),
 			"distance_from_route_miles": round(stop.candidate.distance_from_route_miles, 2),
 			"gallons_purchased": round(stop.gallons_purchased, 3),
-			"fuel_cost": float(stop.fuel_cost),
+			"fuel_cost": float(stop.fuel_cost.quantize(Decimal("0.01"))),
 			"selection_reason": {
 				"price": float(price),
 				"distance_from_previous_stop_miles": round(stop.distance_from_previous_stop_miles, 2),
 				"within_vehicle_range": True,
+				"decision": stop.selection_reason,
 			},
 		}

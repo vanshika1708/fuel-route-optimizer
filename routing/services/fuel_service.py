@@ -42,6 +42,7 @@ class FuelService:
             "retail_price",
             "city",
             "state",
+            "location_precision",
         )
 
         candidates: list[FuelCandidate] = []
