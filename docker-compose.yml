@@ -1,0 +1,15 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - fuelroute_data:/app/var
+    environment:
+      SQLITE_PATH: /app/var/db.sqlite3
+
+volumes:
+  fuelroute_data:

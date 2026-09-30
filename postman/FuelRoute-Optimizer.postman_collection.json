@@ -1,0 +1,36 @@
+{
+  "info": {
+    "_postman_id": "5eaf51cf-4d61-4e7f-9090-38e7d61a0051",
+    "name": "FuelRoute Optimizer",
+    "description": "FuelRoute Optimizer API. Route examples require network access to Nominatim and OSRM plus geocoded local station rows.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://127.0.0.1:8000" }
+  ],
+  "item": [
+    {
+      "name": "Health check",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/health/" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('health is ok', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('ok'); });"] } }]
+    },
+    {
+      "name": "New York to Chicago",
+      "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"start\": \"New York, NY\",\n  \"finish\": \"Chicago, IL\"\n}" }, "url": "{{baseUrl}}/api/v1/route/" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('route response has geometry and fuel summary', function () { pm.expect(pm.response.code).to.be.oneOf([200, 422]); if (pm.response.code === 200) { const body = pm.response.json(); pm.expect(body.route.geometry.type).to.eql('LineString'); pm.expect(body.fuel_summary.total_fuel_cost).to.be.a('number'); } });"] } }]
+    },
+    {
+      "name": "Los Angeles to San Francisco",
+      "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"start\": \"Los Angeles, CA\",\n  \"finish\": \"San Francisco, CA\"\n}" }, "url": "{{baseUrl}}/api/v1/route/" }
+    },
+    {
+      "name": "Long-distance route",
+      "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"start\": \"New York, NY\",\n  \"finish\": \"Los Angeles, CA\"\n}" }, "url": "{{baseUrl}}/api/v1/route/" }
+    },
+    {
+      "name": "Invalid location",
+      "request": { "method": "POST", "header": [{ "key": "Content-Type", "value": "application/json" }], "body": { "mode": "raw", "raw": "{\n  \"start\": \"Atlantis\",\n  \"finish\": \"Chicago, IL\"\n}" }, "url": "{{baseUrl}}/api/v1/route/" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": ["pm.test('invalid location is a client error', function () { pm.response.to.have.status(400); pm.expect(pm.response.json()).to.have.property('error'); });"] } }]
+    }
+  ]
+}
